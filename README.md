@@ -11,8 +11,10 @@ Processwire module to add easy export and import of module settings.
 * Restore backed up settings at any time
 * Import option checks module name and version number and warns if importing settings from a different version
 
+
 ####Support forum:
 
+https://processwire.com/talk/topic/15702-module-settings-import-export/
 
 
 ## License
