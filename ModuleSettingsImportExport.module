@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.1.0',
+            'version' => '0.2.0',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -70,12 +70,14 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
      */
     public function init() {
 
-        if($this->wire('input')->post->name) $moduleName = $this->wire('input')->post->name;
-            else if($this->wire('input')->get->name) $moduleName = $this->wire('input')->get->name;
+        if($this->wire('input')->post->name) $this->moduleName = $this->wire('input')->post->name;
+            else if($this->wire('input')->get->name) $this->moduleName = $this->wire('input')->get->name;
 
-        if(!isset($moduleName)) return;
+        if(!isset($this->moduleName) || $this->moduleName === $this->className) return;
 
-        $this->moduleName = $this->wire('sanitizer')->name($moduleName);
+        if(!in_array('ConfigurableModule', class_implements($this->moduleName))) return;
+
+        $this->moduleName = $this->wire('sanitizer')->name($this->moduleName);
         $moduleInfo = $this->wire('modules')->getModuleInfo($this->moduleName);
         $this->moduleVersion = $moduleInfo['version'];
 
@@ -115,12 +117,12 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
             $this->versionMismatch = true;
             return;
         }
-        $this->modules->saveModuleConfigData($this->moduleName, $moduleSettings[$this->moduleName]['settings']);
+        $this->wire('modules')->saveModuleConfigData($this->moduleName, $moduleSettings[$this->moduleName]['settings']);
         $this->wire()->message('The pasted settings for the ' . $this->moduleName . ' module were successfully imported.');
     }
 
     protected function restoreSettings() {
-        $this->modules->saveModuleConfigData($this->moduleName, $this->data['moduleSettings'][$this->moduleName]['settings']);
+        $this->wire('modules')->saveModuleConfigData($this->moduleName, $this->data['moduleSettings'][$this->moduleName]['settings']);
         $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully restore from backup.');
     }
 
@@ -129,10 +131,10 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         $moduleName = $event->object instanceof ProcessModule ? $this->moduleName : (string)$event->object;
         unset($this->data['moduleSettings'][$moduleName]); // remove existing record for this module
         $this->data['moduleSettings'][$moduleName]['version'] = $this->moduleVersion;
-        $this->data['moduleSettings'][$moduleName]['settings'] = $this->modules->getModuleConfigData($moduleName);
+        $this->data['moduleSettings'][$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
 
         // save to config data with the rest of the settings
-        $this->modules->saveModuleConfigData($this->modules->get(__CLASS__), $this->data);
+        $this->wire('modules')->saveModuleConfigData($this->wire('modules')->get(__CLASS__), $this->data);
         $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully backed up.');
     }
 
@@ -176,7 +178,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         }
         else {
             $moduleConfigData[$this->moduleName]['version'] = $this->moduleVersion;
-            $moduleConfigData[$this->moduleName]['settings'] = $this->modules->getModuleConfigData($this->moduleName);
+            $moduleConfigData[$this->moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($this->moduleName);
             $f->value = json_encode($moduleConfigData);
         }
         $form->add($f);
@@ -188,13 +190,15 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
 
         $f = $this->wire('modules')->get('InputfieldSubmit');
         $f->attr('id+name', 'backupSettings');
-        $f->value = 'Backup Current Settings';
+        $f->value = 'Backup Current Settings ('.$this->wire('modules')->formatVersion($this->moduleVersion).')';
         $form->add($f);
 
-        $f = $this->wire('modules')->get('InputfieldSubmit');
-        $f->attr('id+name', 'restoreSettings');
-        $f->value = 'Restore Settings from Backup';
-        $form->add($f);
+        if(isset($this->data['moduleSettings'][$this->moduleName])) {
+            $f = $this->wire('modules')->get('InputfieldSubmit');
+            $f->attr('id+name', 'restoreSettings');
+            $f->value = 'Restore Settings from Backup ('.$this->wire('modules')->formatVersion($this->data['moduleSettings'][$this->moduleName]['version']).')';
+            $form->add($f);
+        }
 
         $event->return = $wrapper->render() . $event->return;
 
@@ -205,6 +209,11 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         return (json_last_error() == JSON_ERROR_NONE);
     }
 
+    private function cmp($a, $b) {
+        return strcmp($a->name, $b->name);
+    }
+
+
     /**
      * Return an InputfieldsWrapper of Inputfields used to configure the class
      *
@@ -214,16 +223,108 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
      */
     public function getModuleConfigInputfields(array $data) {
 
+        $conf = $this->getModuleInfo();
+        $version = (int) $conf['version'];
+        $this->wire('config')->scripts->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.js?v={$version}");
+        $this->wire('config')->styles->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.css?v={$version}");
+
         $data = array_merge(self::getDefaultData(), $data);
+
+        if ($this->wire('input')->post->updateAll) {
+            $moduleSettings = json_decode($this->wire('input')->post->allModuleSettings, true);
+            foreach($moduleSettings as $moduleName => $module) {
+                $moduleVersion = $moduleSettings[$moduleName]['version'];
+                $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+                if($moduleVersion !== $moduleInfo['version'] && !$this->wire('input')->post->versionOverride) {
+                    $this->wire()->warning('The pasted settings for the ' . $moduleName . ' module are for version ' . $moduleVersion . ', but ' . $moduleInfo['version'] . ' is currently installed. Please check the "Version Override" option and try again.');
+                }
+                else {
+                    $this->wire('modules')->saveModuleConfigData($moduleName, $module['settings']);
+                    $this->wire()->message('The pasted settings for the ' . $moduleName . ' module were successfully imported.');
+                }
+            }
+        }
 
         $wrapper = new InputfieldWrapper();
 
         $f = $this->wire('modules')->get("InputfieldCheckbox");
         $f->attr('name', 'backupSettingsOnUninstall');
         $f->label = __('Automatically Backup Settings on Uninstall', __FILE__);
-        $f->description = __('If checked, settings will be saved when a module is uninstalled.', __FILE__);
+        $f->description = __('If checked, settings will be saved when any module is uninstalled.', __FILE__);
         $f->attr('checked', $data['backupSettingsOnUninstall'] == '1' ? 'checked' : '' );
         $wrapper->add($f);
+
+        if(isset($data['moduleSettings'])) {
+            $fieldset = $this->wire('modules')->get("InputfieldFieldset");
+            $fieldset->attr('name', 'backedUpSettings');
+            $fieldset->label = 'Backed Up Settings';
+            $fieldset->description = 'These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).';
+            $wrapper->add($fieldset);
+
+            foreach($data['moduleSettings'] as $moduleName => $module) {
+                if(!in_array('ConfigurableModule', class_implements($moduleName))) continue;
+                $f = $this->wire('modules')->get("InputfieldTextarea");
+                $f->attr('name', 'settings_'.$moduleName);
+                $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+                $moduleVersion = $moduleInfo['version'];
+                $f->label = $moduleName . ': ' . $this->wire('modules')->formatVersion($module['version']) . ' (' . $this->wire('modules')->formatVersion($moduleVersion) . ')';
+                $f->description = "[Edit module](".$this->wire('config')->urls->admin."module/edit?name=".$moduleName.")";
+                $f->collapsed = Inputfield::collapsedYes;
+                $moduleSettings[$moduleName] = $module;
+                $f->attr('readonly', 'readonly');
+                $f->attr('disabled', 'disabled');
+                $f->value = json_encode($moduleSettings);
+                $fieldset->add($f);
+            }
+
+            $fieldset = $this->wire('modules')->get("InputfieldFieldset");
+            $fieldset->attr('name', 'batchModuleSettings');
+            $fieldset->label = 'Export/Import Multiple Module Settings';
+            $fieldset->collapsed = Inputfield::collapsedYes;
+            $wrapper->add($fieldset);
+
+            $f = $this->wire('modules')->get("InputfieldCheckboxes");
+            $f->attr('name', 'selectedModules');
+            $f->label = 'Selected Modules';
+            $f->description = 'Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.';
+            $moduleSettingsArr = array();
+            $modulesArr = $this->wire('modules')->getArray();
+            ksort($modulesArr);
+            foreach($modulesArr as $moduleName => $module) {
+                $moduleConfigData = array();
+                if(!in_array('ConfigurableModule', class_implements($moduleName))) continue;
+                $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+                $moduleConfigData[$moduleName]['version'] = $moduleInfo['version'];
+                $moduleConfigData[$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
+                $moduleSettingsArr[$moduleName] = json_encode($moduleConfigData);
+                $f->addOption($moduleName);
+            }
+            $fieldset->add($f);
+            $this->wire('config')->js("allModuleSettings", $moduleSettingsArr);
+
+            $f = $this->wire('modules')->get("InputfieldTextarea");
+            $f->attr('name', 'allModuleSettings');
+            $f->label = 'Settings';
+            $f->description = 'Copy from here to another ProcessWire site. Or paste here and check "Update All" to install these settings to this site.';
+            $f->value = '';
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldCheckbox");
+            $f->attr('name', 'updateAll');
+            $f->label = 'Update All';
+            $f->description = 'If checked when the Submit button is clicked, all modules will be updated with the settings entered above.';
+            $f->notes = 'Please be careful, this can\'t be reversed.';
+            $f->columnWidth = 50;
+            $fieldset->add($f);
+
+            $f = $this->wire('modules')->get("InputfieldCheckbox");
+            $f->name = 'versionOverride';
+            $f->label = 'Version Override';
+            $f->description = "Check this to force settings to be imported even if there is a version mismatch between the settings and the module version currently installed.";
+            $f->columnWidth = 50;
+            $fieldset->add($f);
+
+        }
 
         return $wrapper;
 
