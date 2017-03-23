@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.1',
+            'version' => '0.2.2',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -259,6 +259,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
             $fieldset->attr('name', 'backedUpSettings');
             $fieldset->label = 'Backed Up Settings';
             $fieldset->description = 'These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).';
+            $fieldset->collapsed = Inputfield::collapsedYes;
             $wrapper->add($fieldset);
 
             foreach($data['moduleSettings'] as $moduleName => $module) {
