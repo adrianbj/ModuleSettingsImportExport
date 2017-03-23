@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.0',
+            'version' => '0.2.1',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -297,7 +297,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
                 $moduleConfigData[$moduleName]['version'] = $moduleInfo['version'];
                 $moduleConfigData[$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
                 $moduleSettingsArr[$moduleName] = json_encode($moduleConfigData);
-                $f->addOption($moduleName);
+                $f->addOption($moduleName, $moduleName.' ('.$this->wire('modules')->formatVersion($moduleInfo['version']).')');
             }
             $fieldset->add($f);
             $this->wire('config')->js("allModuleSettings", $moduleSettingsArr);
