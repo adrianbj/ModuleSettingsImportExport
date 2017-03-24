@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.2',
+            'version' => '0.2.3',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -288,6 +288,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
             $f->attr('name', 'selectedModules');
             $f->label = 'Selected Modules';
             $f->description = 'Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.';
+            $f->addOption('toggleAll', 'TOGGLE ALL');
             $moduleSettingsArr = array();
             $modulesArr = $this->wire('modules')->getArray();
             ksort($modulesArr);
