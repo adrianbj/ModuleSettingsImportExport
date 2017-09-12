@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.4',
+            'version' => '0.2.5',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -94,7 +94,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         }
 
         if($this->data['backupSettingsOnUninstall']) {
-            $this->addHookAfter('Module::uninstall', $this, 'backupSettings');
+            $this->addHookBefore('Modules::uninstall', $this, 'backupSettings');
         }
 
         $this->addHookAfter('ProcessModule::executeEdit', $this, 'displaySettings');
@@ -123,19 +123,18 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
 
     protected function restoreSettings() {
         $this->wire('modules')->saveModuleConfigData($this->moduleName, $this->data['moduleSettings'][$this->moduleName]['settings']);
-        $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully restore from backup.');
+        $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully restored from backup.');
     }
 
     protected function backupSettings($event) {
-        // not using $this->moduleName because this might be called from outside of ProcessModule page
-        $moduleName = $event->object instanceof ProcessModule ? $this->moduleName : (string)$event->object;
+        $moduleName = $this->moduleName ? $this->moduleName : $event->arguments(0);
         unset($this->data['moduleSettings'][$moduleName]); // remove existing record for this module
         $this->data['moduleSettings'][$moduleName]['version'] = $this->moduleVersion;
         $this->data['moduleSettings'][$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
 
         // save to config data with the rest of the settings
         $this->wire('modules')->saveModuleConfigData($this->wire('modules')->get(__CLASS__), $this->data);
-        $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully backed up.');
+        $this->wire()->message('The settings for the ' . $moduleName . ' module were successfully backed up.');
     }
 
     protected function displaySettings($event) {
