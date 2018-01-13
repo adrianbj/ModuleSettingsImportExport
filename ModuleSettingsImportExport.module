@@ -6,7 +6,7 @@
  *
  * Adds import and export of settings to each module config page
  *
- * ProcessWire 2.x
+ * ProcessWire 3.x
  * Copyright (C) 2011 by Ryan Cramer
  * Licensed under GNU/GPL v2, see LICENSE.TXT
  *
@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.7',
+            'version' => '0.2.8',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -60,9 +60,9 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
      *
      */
     public function __construct() {
-       foreach(self::getDefaultData() as $key => $value) {
-               $this->$key = $value;
-       }
+        foreach(self::getDefaultData() as $key => $value) {
+            $this->$key = $value;
+        }
     }
 
     /**
@@ -150,7 +150,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
 
         $fieldset = $this->wire('modules')->get("InputfieldFieldset");
         $fieldset->attr('id', 'ModuleSettingsImportExport');
-        $fieldset->label = __("Settings Import / Export");
+        $fieldset->label = __('Settings Import / Export', __FILE__);
         $fieldset->collapsed = $this->openSettings ? Inputfield::collapsedNo : Inputfield::collapsedYes;
         $fieldset->icon = 'cog';
         $wrapper->add($fieldset);
@@ -163,15 +163,15 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         if($this->versionMismatch) {
             $f = $this->wire('modules')->get("InputfieldCheckbox");
             $f->name = 'versionOverride';
-            $f->label = 'Version Override';
-            $f->description = "The version of the settings you are trying to import is different to the version of the module currently installed. Check this and Import again.";
+            $f->label = __('Version Override', __FILE__);
+            $f->description = __('The version of the settings you are trying to import is different to the version of the module currently installed. Check this and Import again.', __FILE__);
             $form->add($f);
         }
 
         $f = $this->wire('modules')->get("InputfieldTextarea");
         $f->name = 'moduleSettings';
-        $f->label = 'Module Settings';
-        $f->description = "Copy and paste into another site, or click Import Pasted Settings if you have pasted in settings from another install.";
+        $f->label = __('Module Settings', __FILE__);
+        $f->description = __('Copy and paste into another site, or click Import Pasted Settings if you have pasted in settings from another install.', __FILE__);
         // if wrong version, then display last pasted settings, not already saved version
         if($this->versionMismatch || $this->moduleMismatch) {
             $f->value = $this->wire('input')->post->moduleSettings;
@@ -208,11 +208,6 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         json_decode($string);
         return (json_last_error() == JSON_ERROR_NONE);
     }
-
-    private function cmp($a, $b) {
-        return strcmp($a->name, $b->name);
-    }
-
 
     /**
      * Return an InputfieldsWrapper of Inputfields used to configure the class
@@ -257,8 +252,8 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         if(isset($data['moduleSettings'])) {
             $fieldset = $this->wire('modules')->get("InputfieldFieldset");
             $fieldset->attr('name', 'backedUpSettings');
-            $fieldset->label = 'Backed Up Settings';
-            $fieldset->description = 'These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).';
+            $fieldset->label = __('Backed Up Settings', __FILE__);
+            $fieldset->description = __('These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).', __FILE__);
             $fieldset->collapsed = Inputfield::collapsedYes;
             $wrapper->add($fieldset);
 
@@ -283,15 +278,15 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
 
         $fieldset = $this->wire('modules')->get("InputfieldFieldset");
         $fieldset->attr('name', 'batchModuleSettings');
-        $fieldset->label = 'Export/Import Multiple Module Settings';
+        $fieldset->label = __('Export/Import Multiple Module Settings', __FILE__);
         $fieldset->collapsed = Inputfield::collapsedYes;
         $wrapper->add($fieldset);
 
         $f = $this->wire('modules')->get("InputfieldCheckboxes");
         $f->attr('name', 'selectedModules');
-        $f->label = 'Selected Modules';
-        $f->description = 'Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.';
-        $f->addOption('toggleAll', 'TOGGLE ALL');
+        $f->label = __('Selected Modules', __FILE__);
+        $f->description = __('Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.', __FILE__);
+        $f->addOption('toggleAll', __('TOGGLE ALL', __FILE__));
         $moduleSettingsArr = array();
         $modulesArr = $this->wire('modules')->getArray();
         ksort($modulesArr);
@@ -310,30 +305,28 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
 
         $f = $this->wire('modules')->get("InputfieldTextarea");
         $f->attr('name', 'allModuleSettings');
-        $f->label = 'Settings';
-        $f->description = 'Copy from here to another ProcessWire site. Or paste here and check "Update All" to install these settings to this site.';
+        $f->label = __('Settings', __FILE__);
+        $f->description = __('Copy from here to another ProcessWire site. Or paste here and check "Update All" to install these settings to this site.', __FILE__);
         $f->value = '';
         $fieldset->add($f);
 
         $f = $this->wire('modules')->get("InputfieldCheckbox");
         $f->attr('name', 'updateAll');
-        $f->label = 'Update All';
-        $f->description = 'If checked when the Submit button is clicked, all modules will be updated with the settings entered above.';
-        $f->notes = 'Please be careful, this can\'t be reversed.';
+        $f->label = __('Update All', __FILE__);
+        $f->description = __('If checked when the Submit button is clicked, all modules will be updated with the settings entered above.', __FILE__);
+        $f->notes = __('Please be careful, this can\'t be reversed.', __FILE__);
         $f->columnWidth = 50;
         $fieldset->add($f);
 
         $f = $this->wire('modules')->get("InputfieldCheckbox");
         $f->name = 'versionOverride';
-        $f->label = 'Version Override';
-        $f->description = "Check this to force settings to be imported even if there is a version mismatch between the settings and the module version currently installed.";
+        $f->label = __('Version Override', __FILE__);
+        $f->description = __('Check this to force settings to be imported even if there is a version mismatch between the settings and the module version currently installed.', __FILE__);
         $f->columnWidth = 50;
         $fieldset->add($f);
-
 
         return $wrapper;
 
     }
-
 
 }

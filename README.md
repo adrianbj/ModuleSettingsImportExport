@@ -1,11 +1,10 @@
-Module Settings Import / Export
-===============================
+# Module Settings Import / Export
 
 Processwire module to add easy export and import of module settings.
 
 ### Module features
 
-* Ability to copy and paste settings from one PW install to another
+* Ability to copy and paste module settings (single or batch) from one PW install to another
 * Optional automatic backup of module settings on uninstall
 * Backup current settings at any time
 * Restore backed up settings at any time
