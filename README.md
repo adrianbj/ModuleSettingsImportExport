@@ -10,6 +10,10 @@ Processwire module to add easy export and import of module settings.
 * Restore backed up settings at any time
 * Import option checks module name and version number and warns if importing settings from a different version
 
+v0.2.11 includes an experimental feature to convert ids to/from names or paths in the settings. This is useful when moving settings between installations where the ids are different. 
+  This feature is disabled by default and can be enabled in the module settings. 
+Please test this feature thoroughly (for the desired modules) before using it in a production environment. Don't forget to set ths feature similarly for both export and import.
+
 
 #### Support forum:
 

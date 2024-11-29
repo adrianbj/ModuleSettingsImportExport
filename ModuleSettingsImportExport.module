@@ -18,315 +18,570 @@
 
 class ModuleSettingsImportExport extends WireData implements Module, ConfigurableModule {
 
-    /**
-     * getModuleInfo is a module required by all modules to tell ProcessWire about them
-     *
-     * @return array
-     *
-     */
-    public static function getModuleInfo() {
-        return array(
-            'title' => 'Module Settings Import Export',
-            'version' => '0.2.9',
-            'summary' => 'Adds import and export of settings to each module config page.',
-            'author' => 'Adrian Jones',
-            'autoload' => function() {
-                if(wire('page')->process == 'ProcessModule') return true;
-                    else return false;
-            },
-            'icon' => 'cog'
-        );
-    }
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Module Settings Import Export',
+			'version' => '0.2.11',
+			'summary' => 'Adds import and export of settings to each module config page.',
+			'author' => 'Adrian Jones',
+			'autoload' => function() {
+				if(wire('page')->process == 'ProcessModule') return true;
+				else return false;
+			},
+			'icon' => 'cog'
+		);
+	}
 
-    protected $data = array();
-    protected $moduleName;
-    protected $moduleVersion;
-    protected $openSettings = false;
-    protected $versionMismatch = false;
-    protected $moduleMismatch = false;
+	protected $data = array();
+	protected $moduleName;
+	protected $moduleVersion;
+	protected $openSettings = false;
+	protected $versionMismatch = false;
+	protected $moduleMismatch = false;
 
-   /**
-     * Default configuration for module
-     *
-     */
-    static public function getDefaultData() {
-        return array(
-            "backupSettingsOnUninstall" => 1
-        );
-    }
+	/**
+	 * Default configuration for module
+	 *
+	 */
+	static public function getDefaultData() {
+		return array(
+			"backupSettingsOnUninstall" => 1,
+			"useNames" => 0
+		);
+	}
 
-    /**
-     * Populate the default config data
-     *
-     */
-    public function __construct() {
-        foreach(self::getDefaultData() as $key => $value) {
-            $this->$key = $value;
-        }
-    }
+	/**
+	 * Populate the default config data
+	 *
+	 */
+	public function __construct() {
+		foreach(self::getDefaultData() as $key => $value) {
+			$this->$key = $value;
+		}
+	}
 
-    /**
-     * Initialize the module and setup hooks
-     */
-    public function init() {
+	/**
+	 * Initialize the module and setup hooks
+	 */
+	public function init() {
 
-        if($this->wire('input')->post->name) $this->moduleName = $this->wire('input')->post->name;
-            else if($this->wire('input')->get->name) $this->moduleName = $this->wire('input')->get->name;
+		if($this->wire('input')->post->name) $this->moduleName = $this->wire('input')->post->name;
+		else if($this->wire('input')->get->name) $this->moduleName = $this->wire('input')->get->name;
 
-        if(!isset($this->moduleName) || $this->moduleName === $this->className) return;
+		if(!isset($this->moduleName) || $this->moduleName === $this->className) return;
 
-        $info = $this->wire('modules')->getModuleInfoVerbose($this->moduleName);
-        if(!$info['configurable']) return;
+		$info = $this->wire('modules')->getModuleInfoVerbose($this->moduleName);
+		if(!$info['configurable']) return;
 
-        $this->moduleName = $this->wire('sanitizer')->name($this->moduleName);
-        $moduleInfo = $this->wire('modules')->getModuleInfo($this->moduleName);
-        $this->moduleVersion = $moduleInfo['version'];
+		$this->moduleName = $this->wire('sanitizer')->name($this->moduleName);
+		$moduleInfo = $this->wire('modules')->getModuleInfo($this->moduleName);
+		$this->moduleVersion = $moduleInfo['version'];
 
-        if($this->wire('input')->post->importSettings && $this->isJson($this->wire('input')->post->moduleSettings)) {
-            $this->addHookBefore('ProcessModule::executeEdit', $this, 'importSettings');
-        }
+		if($this->wire('input')->post->importSettings && $this->isJson($this->wire('input')->post->moduleSettings)) {
+			$this->addHookBefore('ProcessModule::executeEdit', $this, 'importSettings');
+		}
 
-        if($this->wire('input')->post->restoreSettings) {
-            $this->addHookBefore('ProcessModule::executeEdit', $this, 'restoreSettings');
-        }
+		if($this->wire('input')->post->restoreSettings) {
+			$this->addHookBefore('ProcessModule::executeEdit', $this, 'restoreSettings');
+		}
 
-        if($this->wire('input')->post->backupSettings) {
-            $this->addHookBefore('ProcessModule::executeEdit', $this, 'backupSettings');
-        }
+		if($this->wire('input')->post->backupSettings) {
+			$this->addHookBefore('ProcessModule::executeEdit', $this, 'backupSettings');
+		}
 
-        if($this->data['backupSettingsOnUninstall']) {
-            $this->addHookBefore('Modules::uninstall', $this, 'backupSettings');
-        }
+		if($this->data['backupSettingsOnUninstall']) {
+			$this->addHookBefore('Modules::uninstall', $this, 'backupSettings');
+		}
 
-        $this->addHookAfter('ProcessModule::executeEdit', $this, 'displaySettings');
+		$this->addHookAfter('ProcessModule::executeEdit', $this, 'displaySettings');
 
-    }
+	}
 
-    protected function importSettings() {
-        $moduleSettings = json_decode($this->wire('input')->post->moduleSettings, true);
-        $moduleName = key($moduleSettings);
-        if($moduleName !== $this->moduleName) {
-            $this->wire()->error('The pasted settings are for the ' . $moduleName . ' module, and not the ' . $this->moduleName . ' module and can\'t be imported.');
-            $this->openSettings = true;
-            $this->moduleMismatch = true;
-            return;
-        }
-        $moduleVersion = $moduleSettings[$moduleName]['version'];
-        if($moduleVersion !== $this->moduleVersion && !$this->wire('input')->post->versionOverride) {
-            $this->wire()->warning('The pasted settings are for version ' . $moduleVersion . ', but ' . $this->moduleVersion . ' is currently installed. Confirm below to continue.');
-            $this->openSettings = true;
-            $this->versionMismatch = true;
-            return;
-        }
-        $this->wire('modules')->saveModuleConfigData($this->moduleName, $moduleSettings[$this->moduleName]['settings']);
-        $this->wire()->message('The pasted settings for the ' . $this->moduleName . ' module were successfully imported.');
-    }
+	protected function importSettings() {
+		$moduleJsonSettings = $this->wire('input')->post->moduleSettings;
+		$moduleSettings = json_decode($moduleJsonSettings, true);
+		if(!is_array($moduleSettings)) {
+			$this->wire()->error('The pasted settings are not in a valid JSON format and can\'t be imported.');
+			$this->openSettings = true;
+			return;
+		}
+		if($this->data['useNames']) {
+			$moduleSettings = json_decode($this->convertJsonRefs($moduleJsonSettings, 'name', 'id'), true);
+		}
+		$moduleName = key($moduleSettings);
+		if($moduleName !== $this->moduleName) {
+			$this->wire()->error('The pasted settings are for the ' . $moduleName . ' module, and not the ' . $this->moduleName . ' module and can\'t be imported.');
+			$this->openSettings = true;
+			$this->moduleMismatch = true;
+			return;
+		}
+		$moduleVersion = $moduleSettings[$moduleName]['version'];
+		if($moduleVersion !== $this->moduleVersion && !$this->wire('input')->post->versionOverride) {
+			$this->wire()->warning('The pasted settings are for version ' . $moduleVersion . ', but ' . $this->moduleVersion . ' is currently installed. Confirm below to continue.');
+			$this->openSettings = true;
+			$this->versionMismatch = true;
+			return;
+		}
+		$this->wire('modules')->saveModuleConfigData($this->moduleName, $moduleSettings[$this->moduleName]['settings']);
+		$this->wire()->message('The pasted settings for the ' . $this->moduleName . ' module were successfully imported.');
+	}
 
-    protected function restoreSettings() {
-        $this->wire('modules')->saveModuleConfigData($this->moduleName, $this->data['moduleSettings'][$this->moduleName]['settings']);
-        $this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully restored from backup.');
-    }
+	protected function restoreSettings() {
+		$this->wire('modules')->saveModuleConfigData($this->moduleName, $this->data['moduleSettings'][$this->moduleName]['settings']);
+		$this->wire()->message('The settings for the ' . $this->moduleName . ' module were successfully restored from backup.');
+	}
 
-    protected function backupSettings($event) {
-        $moduleName = $this->moduleName ? $this->moduleName : $event->arguments(0);
-        unset($this->data['moduleSettings'][$moduleName]); // remove existing record for this module
-        $this->data['moduleSettings'][$moduleName]['version'] = $this->moduleVersion;
-        $this->data['moduleSettings'][$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
+	protected function backupSettings($event) {
+		$moduleName = $this->moduleName ? $this->moduleName : $event->arguments(0);
+		unset($this->data['moduleSettings'][$moduleName]); // remove existing record for this module
+		$this->data['moduleSettings'][$moduleName]['version'] = $this->moduleVersion;
+		$this->data['moduleSettings'][$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
 
-        // save to config data with the rest of the settings
-        $this->wire('modules')->saveModuleConfigData($this->wire('modules')->get(__CLASS__), $this->data);
-        $this->wire()->message('The settings for the ' . $moduleName . ' module were successfully backed up.');
-    }
+		// save to config data with the rest of the settings
+		$this->wire('modules')->saveModuleConfigData($this->wire('modules')->get(__CLASS__), $this->data);
+		$this->wire()->message('The settings for the ' . $moduleName . ' module were successfully backed up.');
+	}
 
-    protected function displaySettings($event) {
+	protected function displaySettings($event) {
 
-        $conf = $this->getModuleInfo();
-        $version = (int) $conf['version'];
-        $this->wire('config')->scripts->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.js?v={$version}");
-        $this->wire('config')->styles->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.css?v={$version}");
+		$conf = $this->getModuleInfo();
+		$version = (int)$conf['version'];
+		$this->wire('config')->scripts->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.js?v={$version}");
+		$this->wire('config')->styles->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.css?v={$version}");
 
 
-        $wrapper = new InputfieldWrapper();
+		$wrapper = new InputfieldWrapper();
 
-        $fieldset = $this->wire('modules')->get("InputfieldFieldset");
-        $fieldset->attr('id', 'ModuleSettingsImportExport');
-        $fieldset->label = __('Settings Import / Export', __FILE__);
-        $fieldset->collapsed = $this->openSettings ? Inputfield::collapsedNo : Inputfield::collapsedYes;
-        $fieldset->icon = 'cog';
-        $wrapper->add($fieldset);
+		$fieldset = $this->wire('modules')->get("InputfieldFieldset");
+		$fieldset->attr('id', 'ModuleSettingsImportExport');
+		$fieldset->label = __('Settings Import / Export', __FILE__);
+		$fieldset->collapsed = $this->openSettings ? Inputfield::collapsedNo : Inputfield::collapsedYes;
+		$fieldset->icon = 'cog';
+		$wrapper->add($fieldset);
 
-        $form = $this->wire('modules')->get("InputfieldForm");
-        $form->method = 'post';
-        $form->action = $_SERVER['REQUEST_URI'];
-        $fieldset->add($form);
+		$form = $this->wire('modules')->get("InputfieldForm");
+		$form->method = 'post';
+		$form->action = $_SERVER['REQUEST_URI'];
+		$fieldset->add($form);
 
-        if($this->versionMismatch) {
-            $f = $this->wire('modules')->get("InputfieldCheckbox");
-            $f->name = 'versionOverride';
-            $f->label = __('Version Override', __FILE__);
-            $f->description = __('The version of the settings you are trying to import is different to the version of the module currently installed. Check this and Import again.', __FILE__);
-            $form->add($f);
-        }
+		if($this->versionMismatch) {
+			$f = $this->wire('modules')->get("InputfieldCheckbox");
+			$f->name = 'versionOverride';
+			$f->label = __('Version Override', __FILE__);
+			$f->description = __('The version of the settings you are trying to import is different to the version of the module currently installed. Check this and Import again.', __FILE__);
+			$form->add($f);
+		}
 
-        $f = $this->wire('modules')->get("InputfieldTextarea");
-        $f->name = 'moduleSettings';
-        $f->label = __('Module Settings', __FILE__);
-        $f->description = __('Copy and paste into another site, or click Import Pasted Settings if you have pasted in settings from another install.', __FILE__);
-        // if wrong version, then display last pasted settings, not already saved version
-        if($this->versionMismatch || $this->moduleMismatch) {
-            $f->value = $this->wire('input')->post->moduleSettings;
-        }
-        else {
-            $moduleConfigData[$this->moduleName]['version'] = $this->moduleVersion;
-            $moduleConfigData[$this->moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($this->moduleName);
-            $f->value = json_encode($moduleConfigData);
-        }
-        $form->add($f);
+		$f = $this->wire('modules')->get("InputfieldTextarea");
+		$f->name = 'moduleSettings';
+		$f->label = __('Module Settings', __FILE__);
+		$f->description = __('Copy and paste into another site, or click Import Pasted Settings if you have pasted in settings from another install.', __FILE__);
+		// if wrong version, then display last pasted settings, not already saved version
+		if($this->versionMismatch || $this->moduleMismatch) {
+			$f->value = $this->wire('input')->post->moduleSettings;
+		} else {
+			$moduleConfigData[$this->moduleName]['version'] = $this->moduleVersion;
+			$moduleConfigData[$this->moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($this->moduleName);
+			$f->value = json_encode($moduleConfigData);
+			if($this->data['useNames']) {
+				$f->value = json_encode($this->convertJsonRefsArray($moduleConfigData, 'id', 'name', 'path'), JSON_UNESCAPED_SLASHES);
+			}
+		}
+		$form->add($f);
 
-        $f = $this->wire('modules')->get('InputfieldSubmit');
-        $f->attr('id+name', 'importSettings');
-        $f->value = 'Import Pasted Settings';
-        $form->add($f);
+		$f = $this->wire('modules')->get('InputfieldSubmit');
+		$f->attr('id+name', 'importSettings');
+		$f->value = 'Import Pasted Settings';
+		$form->add($f);
 
-        $f = $this->wire('modules')->get('InputfieldSubmit');
-        $f->attr('id+name', 'backupSettings');
-        $f->value = 'Backup Current Settings ('.$this->wire('modules')->formatVersion($this->moduleVersion).')';
-        $form->add($f);
+		$f = $this->wire('modules')->get('InputfieldSubmit');
+		$f->attr('id+name', 'backupSettings');
+		$f->value = 'Backup Current Settings (' . $this->wire('modules')->formatVersion($this->moduleVersion) . ')';
+		$form->add($f);
 
-        if(isset($this->data['moduleSettings'][$this->moduleName])) {
-            $f = $this->wire('modules')->get('InputfieldSubmit');
-            $f->attr('id+name', 'restoreSettings');
-            $f->value = 'Restore Settings from Backup ('.$this->wire('modules')->formatVersion($this->data['moduleSettings'][$this->moduleName]['version']).')';
-            $form->add($f);
-        }
+		if(isset($this->data['moduleSettings'][$this->moduleName])) {
+			$f = $this->wire('modules')->get('InputfieldSubmit');
+			$f->attr('id+name', 'restoreSettings');
+			$f->value = 'Restore Settings from Backup (' . $this->wire('modules')->formatVersion($this->data['moduleSettings'][$this->moduleName]['version']) . ')';
+			$form->add($f);
+		}
 
-        $event->return = $wrapper->render() . $event->return;
+		$event->return = $wrapper->render() . $event->return;
 
-    }
+	}
 
-    protected function isJson($string) {
-        json_decode($string);
-        return (json_last_error() == JSON_ERROR_NONE);
-    }
+	protected function isJson($string) {
+		json_decode($string);
+		return (json_last_error() == JSON_ERROR_NONE);
+	}
 
-    /**
-     * Return an InputfieldsWrapper of Inputfields used to configure the class
-     *
-     * @param array $data Array of config values indexed by field name
-     * @return InputfieldsWrapper
-     *
-     */
-    public function getModuleConfigInputfields(array $data) {
+	/**
+	 * Return an InputfieldsWrapper of Inputfields used to configure the class
+	 *
+	 * @param array $data Array of config values indexed by field name
+	 * @return InputfieldsWrapper
+	 *
+	 */
+	public function getModuleConfigInputfields(array $data) {
 
-        $conf = $this->getModuleInfo();
-        $version = (int) $conf['version'];
-        $this->wire('config')->scripts->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.js?v={$version}");
-        $this->wire('config')->styles->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.css?v={$version}");
+		$conf = $this->getModuleInfo();
+		$version = (int)$conf['version'];
+		$this->wire('config')->scripts->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.js?v={$version}");
+		$this->wire('config')->styles->add($this->wire('config')->urls->ModuleSettingsImportExport . "ModuleSettingsImportExport.css?v={$version}");
 
-        $data = array_merge(self::getDefaultData(), $data);
+		$data = array_merge(self::getDefaultData(), $data);
 
-        if ($this->wire('input')->post->updateAll) {
-            $moduleSettings = json_decode($this->wire('input')->post->allModuleSettings, true);
-            foreach($moduleSettings as $moduleName => $module) {
-                $moduleVersion = $moduleSettings[$moduleName]['version'];
-                $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
-                if($moduleVersion !== $moduleInfo['version'] && !$this->wire('input')->post->versionOverride) {
-                    $this->wire()->warning('The pasted settings for the ' . $moduleName . ' module are for version ' . $moduleVersion . ', but ' . $moduleInfo['version'] . ' is currently installed. Please check the "Version Override" option and try again.');
-                }
-                else {
-                    $this->wire('modules')->saveModuleConfigData($moduleName, $module['settings']);
-                    $this->wire()->message('The pasted settings for the ' . $moduleName . ' module were successfully imported.');
-                }
-            }
-        }
+		if($this->wire('input')->post->updateAll) {
+			$moduleSettings = json_decode($this->wire('input')->post->allModuleSettings, true);
+			foreach($moduleSettings as $moduleName => $module) {
+				$moduleVersion = $moduleSettings[$moduleName]['version'];
+				$moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+				if($moduleVersion !== $moduleInfo['version'] && !$this->wire('input')->post->versionOverride) {
+					$this->wire()->warning('The pasted settings for the ' . $moduleName . ' module are for version ' . $moduleVersion . ', but ' . $moduleInfo['version'] . ' is currently installed. Please check the "Version Override" option and try again.');
+				} else {
+					$this->wire('modules')->saveModuleConfigData($moduleName, $module['settings']);
+					$this->wire()->message('The pasted settings for the ' . $moduleName . ' module were successfully imported.');
+				}
+			}
+		}
 
-        $wrapper = new InputfieldWrapper();
+		$wrapper = new InputfieldWrapper();
 
-        $f = $this->wire('modules')->get("InputfieldCheckbox");
-        $f->attr('name', 'backupSettingsOnUninstall');
-        $f->label = __('Automatically Backup Settings on Uninstall', __FILE__);
-        $f->description = __('If checked, settings will be saved when any module is uninstalled.', __FILE__);
-        $f->attr('checked', $data['backupSettingsOnUninstall'] == '1' ? 'checked' : '' );
-        $wrapper->add($f);
+		$f = $this->wire('modules')->get("InputfieldCheckbox");
+		$f->attr('name', 'backupSettingsOnUninstall');
+		$f->label = __('Automatically Backup Settings on Uninstall', __FILE__);
+		$f->description = __('If checked, settings will be saved when any module is uninstalled.', __FILE__);
+		$f->attr('checked', $data['backupSettingsOnUninstall'] == '1' ? 'checked' : '');
+		$wrapper->add($f);
 
-        if(isset($data['moduleSettings'])) {
-            $fieldset = $this->wire('modules')->get("InputfieldFieldset");
-            $fieldset->attr('name', 'backedUpSettings');
-            $fieldset->label = __('Backed Up Settings', __FILE__);
-            $fieldset->description = __('These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).', __FILE__);
-            $fieldset->collapsed = Inputfield::collapsedYes;
-            $wrapper->add($fieldset);
+		$f = $this->wire('modules')->get("InputfieldCheckbox");
+		$f->attr('name', 'useNames');
+		$f->label = __('Use names/paths rather than ids in export/import json (Experimental)', __FILE__);
+		$f->description = __('If checked, all exports will reference names/paths rather than ids and all imports will expect names/paths*.', __FILE__);
+		$f->notes = __('If checked, this will apply to individual module export/imports and to multiple settings (below), but NOT to backup settings. (* Imports using ids might work but cannot be guaranteed.)', __FILE__);
+		$f->attr('checked', $data['useNames'] == '1' ? 'checked' : '');
+		$wrapper->add($f);
 
-            foreach($data['moduleSettings'] as $moduleName => $module) {
-                $moduleSettings = array();
-                $info = $this->wire('modules')->getModuleInfoVerbose($moduleName);
-                if(!$info['configurable']) continue;
-                $f = $this->wire('modules')->get("InputfieldTextarea");
-                $f->attr('name', 'settings_'.$moduleName);
-                $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
-                $moduleVersion = $moduleInfo['version'];
-                $f->label = $moduleName . ': ' . $this->wire('modules')->formatVersion($module['version']) . ' (' . ($this->wire('modules')->isInstalled($moduleName) ? $this->wire('modules')->formatVersion($moduleVersion) : 'Not Installed') . ')';
-                $f->description = "[Edit module](".$this->wire('config')->urls->admin."module/edit?name=".$moduleName.")";
-                $f->collapsed = Inputfield::collapsedYes;
-                $moduleSettings[$moduleName] = $module;
-                $f->attr('readonly', 'readonly');
-                $f->attr('disabled', 'disabled');
-                $f->value = json_encode($moduleSettings);
-                $fieldset->add($f);
-            }
-        }
+		if(isset($data['moduleSettings'])) {
+			$fieldset = $this->wire('modules')->get("InputfieldFieldset");
+			$fieldset->attr('name', 'backedUpSettings');
+			$fieldset->label = __('Backed Up Settings', __FILE__);
+			$fieldset->description = __('These are primarily here as information, but you can copy from here if you wish. The version numbers are: Backed Up Version (Current Installed Version).', __FILE__);
+			$fieldset->collapsed = Inputfield::collapsedYes;
+			$wrapper->add($fieldset);
 
-        $fieldset = $this->wire('modules')->get("InputfieldFieldset");
-        $fieldset->attr('name', 'batchModuleSettings');
-        $fieldset->label = __('Export/Import Multiple Module Settings', __FILE__);
-        $fieldset->collapsed = Inputfield::collapsedYes;
-        $wrapper->add($fieldset);
+			foreach($data['moduleSettings'] as $moduleName => $module) {
+				$moduleSettings = array();
+				$info = $this->wire('modules')->getModuleInfoVerbose($moduleName);
+				if(!$info['configurable']) continue;
+				$f = $this->wire('modules')->get("InputfieldTextarea");
+				$f->attr('name', 'settings_' . $moduleName);
+				$moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+				$moduleVersion = $moduleInfo['version'];
+				$f->label = $moduleName . ': ' . $this->wire('modules')->formatVersion($module['version']) . ' (' . ($this->wire('modules')->isInstalled($moduleName) ? $this->wire('modules')->formatVersion($moduleVersion) : 'Not Installed') . ')';
+				$f->description = "[Edit module](" . $this->wire('config')->urls->admin . "module/edit?name=" . $moduleName . ")";
+				$f->collapsed = Inputfield::collapsedYes;
+				$moduleSettings[$moduleName] = $module;
+				$f->attr('readonly', 'readonly');
+				$f->attr('disabled', 'disabled');
+				$f->value = json_encode($moduleSettings);
+				$fieldset->add($f);
+			}
+		}
 
-        $f = $this->wire('modules')->get("InputfieldCheckboxes");
-        $f->attr('name', 'selectedModules');
-        $f->label = __('Selected Modules', __FILE__);
-        $f->description = __('Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.', __FILE__);
-        $f->addOption('toggleAll', __('TOGGLE ALL', __FILE__));
-        $moduleSettingsArr = array();
-        $modulesArr = $this->wire('modules')->getArray();
-        ksort($modulesArr);
-        foreach($modulesArr as $moduleName => $module) {
-            $moduleConfigData = array();
-            $info = $this->wire('modules')->getModuleInfoVerbose($moduleName);
-            if(!$info['configurable']) continue;
-            $moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
-            $moduleConfigData[$moduleName]['version'] = $moduleInfo['version'];
-            $moduleConfigData[$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
-            $moduleSettingsArr[$moduleName] = json_encode($moduleConfigData);
-            $f->addOption($moduleName, $moduleName.' ('.$this->wire('modules')->formatVersion($moduleInfo['version']).')');
-        }
-        $fieldset->add($f);
-        $this->wire('config')->js("allModuleSettings", $moduleSettingsArr);
+		$fieldset = $this->wire('modules')->get("InputfieldFieldset");
+		$fieldset->attr('name', 'batchModuleSettings');
+		$fieldset->label = __('Export/Import Multiple Module Settings', __FILE__);
+		$fieldset->collapsed = Inputfield::collapsedYes;
+		$wrapper->add($fieldset);
 
-        $f = $this->wire('modules')->get("InputfieldTextarea");
-        $f->attr('name', 'allModuleSettings');
-        $f->label = __('Settings', __FILE__);
-        $f->description = __('Copy from here to another ProcessWire site. Or paste here and check "Update All" to install these settings to this site.', __FILE__);
-        $f->value = '';
-        $fieldset->add($f);
+		$f = $this->wire('modules')->get("InputfieldCheckboxes");
+		$f->attr('name', 'selectedModules');
+		$f->label = __('Selected Modules', __FILE__);
+		$f->description = __('Select modules to build settings json that can be copied from the "Settings" field below and pasted into another ProcessWire site.', __FILE__);
+		$f->addOption('toggleAll', __('TOGGLE ALL', __FILE__));
+		$moduleSettingsArr = array();
+		$modulesArr = $this->wire('modules')->getArray();
+		ksort($modulesArr);
+		foreach($modulesArr as $moduleName => $module) {
+			$moduleConfigData = array();
+			$info = $this->wire('modules')->getModuleInfoVerbose($moduleName);
+			if(!$info['configurable']) continue;
+			$moduleInfo = $this->wire('modules')->getModuleInfo($moduleName);
+			$moduleConfigData[$moduleName]['version'] = $moduleInfo['version'];
+			$moduleConfigData[$moduleName]['settings'] = $this->wire('modules')->getModuleConfigData($moduleName);
+			$moduleSettingsArr[$moduleName] = json_encode($moduleConfigData);
+			if($this->wire('modules')->getModuleConfigData($moduleName) && $data['useNames']) {
+				$moduleSettingsArr[$moduleName] = $this->convertJsonRefs($moduleSettingsArr[$moduleName], 'id', 'name');
+			}
+			$f->addOption($moduleName, $moduleName . ' (' . $this->wire('modules')->formatVersion($moduleInfo['version']) . ')');
+		}
+		$fieldset->add($f);
+		$this->wire('config')->js("allModuleSettings", $moduleSettingsArr);
 
-        $f = $this->wire('modules')->get("InputfieldCheckbox");
-        $f->attr('name', 'updateAll');
-        $f->label = __('Update All', __FILE__);
-        $f->description = __('If checked when the Submit button is clicked, all modules will be updated with the settings entered above.', __FILE__);
-        $f->notes = __('Please be careful, this can\'t be reversed.', __FILE__);
-        $f->columnWidth = 50;
-        $fieldset->add($f);
+		$f = $this->wire('modules')->get("InputfieldTextarea");
+		$f->attr('name', 'allModuleSettings');
+		$f->label = __('Settings', __FILE__);
+		$f->description = __('Copy from here to another ProcessWire site. Or paste here and check "Update All" to install these settings to this site.', __FILE__);
+		$f->value = '';
+		$fieldset->add($f);
 
-        $f = $this->wire('modules')->get("InputfieldCheckbox");
-        $f->name = 'versionOverride';
-        $f->label = __('Version Override', __FILE__);
-        $f->description = __('Check this to force settings to be imported even if there is a version mismatch between the settings and the module version currently installed.', __FILE__);
-        $f->columnWidth = 50;
-        $fieldset->add($f);
+		$f = $this->wire('modules')->get("InputfieldCheckbox");
+		$f->attr('name', 'updateAll');
+		$f->label = __('Update All', __FILE__);
+		$f->description = __('If checked when the Submit button is clicked, all modules will be updated with the settings entered above.', __FILE__);
+		$f->notes = __('Please be careful, this can\'t be reversed.', __FILE__);
+		$f->columnWidth = 50;
+		$fieldset->add($f);
 
-        return $wrapper;
+		$f = $this->wire('modules')->get("InputfieldCheckbox");
+		$f->name = 'versionOverride';
+		$f->label = __('Version Override', __FILE__);
+		$f->description = __('Check this to force settings to be imported even if there is a version mismatch between the settings and the module version currently installed.', __FILE__);
+		$f->columnWidth = 50;
+		$fieldset->add($f);
 
-    }
+		return $wrapper;
+
+	}
+
+
+	/*
+	 * Method to convert json string with ids into one that uses names/paths instead and vice-versa
+	 * @param string $json
+	 * @param string $from - 'id' or 'name'
+	 * @param string $to - 'id' or 'name'
+	 *
+	 * @return string
+	 */
+	public function convertJsonRefs($json, $from, $to) {
+//		return $json;
+		$pageTo = ($to == 'name') ? 'path' : 'id';
+		$settingsArray = json_decode($json, true);
+		if(!$settingsArray) return $json;
+		$settingsArray = $this->convertJsonRefsArray($settingsArray, $from, $to, $pageTo);
+		return json_encode($settingsArray);
+	}
+
+	/**
+	 * Method to check if a key exists in an array recursively
+	 * @param string $key
+	 * @param array $array
+	 *
+	 * @return bool
+	 */
+	public function keyExistsRecursive($key, $array) {
+		// Check if the key exists at the current level
+		if(array_key_exists($key, $array)) {
+			return true;
+		}
+
+		// Loop through the array
+		foreach($array as $value) {
+			// If the value is an array, recurse into it
+			if(is_array($value) && $this->keyExistsRecursive($key, $value)) {
+				return true;
+			}
+		}
+		// Key not found
+		return false;
+	}
+
+	/*
+	 * Method to convert array (created from settings json) with ids into one that uses names/paths instead and vice-versa
+	 * @param array $settingsArray
+	 * @param string $from - 'id' or 'name'
+	 * @param string $to - 'id' or 'name'
+	 * @param string $pageTo - 'id' or 'path'
+	 * @param string $moduleName - name of the module
+	 * @param InputfieldWrapper $wrap - true if config fields are in an InputfieldWrapper
+	 * @param array $configData - the module config data
+	 */
+	public function convertJsonRefsArray($settingsArray, $from, $to, $pageTo, $moduleName = null, $wrap = null, $configData = []) {
+		$newArray = $settingsArray;
+//		xdebug_break();
+
+		// The module name is the first key in the array
+		if(!$moduleName) {
+			$moduleName = key($settingsArray);
+			// get the module and its config data
+			$module = $this->modules->get($moduleName);
+			if(!$module) {
+				$this->error("Module $moduleName is not installed");
+				return $settingsArray;
+			} else {
+				$wrap = null;
+				if(!method_exists($module, 'getModuleConfigInputfields')) {
+					$this->warning("Module $moduleName does not have a config method");
+				} else {
+					// Get the module config inputfields
+					$moduleClass = get_class($module);
+					$methodChecker = new \ReflectionMethod($moduleClass, 'getModuleConfigInputfields');
+					$params = $methodChecker->getParameters();
+					if(!$params[0]) return $settingsArray;
+					if(!$params[0]->getType()) {
+						$this->warning("Module $moduleName does not have a getModuleConfigInputfields method that accepts a specified parameter type - InputfieldWrapper assumed");
+					}
+					if($params[0]->getType() && $params[0]->getType()->getName() == 'array') {
+						$wrap = $module->getModuleConfigInputfields([]);
+					} else {
+						$wrap = new InputfieldWrapper;
+						$module->getModuleConfigInputfields($wrap);
+					}
+				}
+				$configData = $this->wire('modules')->getModuleConfigData($moduleName);
+			}
+		}
+		foreach($settingsArray as $key => $value) {
+			$newArray[$key] = $value;
+			if(is_array($value) && !array_is_list($value)) {  // Only iterate over associative arrays
+				$newArray[$key] = $this->convertJsonRefsArray($value, $from, $to, $pageTo, $moduleName, $wrap, $configData);
+			} else {
+				if($wrap) {
+					// Find the field in the inputfields (as an object)
+					$field = $wrap->get($key);
+					if(is_a($field, 'ProcessWire\InputfieldPage') || is_a($field, 'ProcessWire\InputfieldPageListSelect') || is_a($field, 'ProcessWire\InputfieldPageAutocomplete')) {
+						$page = $this->pages->get($value); // ToDo need to handle values which are list arrays
+						if($page && $page->id) {
+							$newArray[$key] = $page->$pageTo;
+							unset($configData[$key]);
+						}
+					}
+				}
+					// If the key exists in the config data, then we have to convert the value
+					if($this->keyExistsRecursive($key, $configData)) {
+						foreach(['template', 'field', 'page', 'role', 'user'] as $type) {
+							$types = $type . 's';
+							if($type == 'page') {
+								$typeTo = $pageTo;
+								$flag = JSON_UNESCAPED_SLASHES;
+							} else {
+								$typeTo = $to;
+								$flag = 0;
+							}
+							if(stripos($key, $type) !== false) {
+								if(is_array($value)) {
+									$refs = [];
+									foreach($value as $ref) {
+										// if $ref is not an integer (or a string representation of an integer) and we are converting from ids, then we have to skip it as it is not an id
+										if($from == 'id' && !is_numeric($ref)) {
+											$refs[] = $ref;
+											continue;
+										} else {
+											$ref = $this->wire()->sanitizer->selectorValue($ref);
+										}
+										$item = $this->$types->get($ref);
+										$refs[] = ($item && $item->id) ? $item->$typeTo : $ref;
+									}
+									$replace = $refs;
+
+								} else {
+									if($from == 'id' && !is_numeric($value)) {
+										$newArray[$key] = $value;
+										continue;
+									} else {
+										$ref = $this->wire()->sanitizer->selectorValue($value);
+									}
+									$item = $this->$types->get($ref);
+									$replace = ($item && $item->id) ? $item->$typeTo : $value;
+								}
+								$newArray[$key] = $replace;
+						}
+						if(is_string($value) && is_array(json_decode($value, true))) {
+							if($moduleName == 'ProcessCustomUploadNames') {
+							}
+							$value = json_decode($value, true);
+							$value = $this->convertJsonRefsArray($value, $from, $to, $pageTo, $moduleName, $wrap, $configData);
+							$value = json_encode($value, JSON_UNESCAPED_SLASHES);
+							$newArray[$key] = $value;
+						}
+					}
+				}
+			}
+			$value = $newArray[$key];
+			/***************************************************************
+			 * This next section deals with selector data in the module settings of the form xxx=yyy, xxx!=yyy
+			 **************************************************************/
+			if(is_string($value)) {
+				$matches = [];
+				if($from == 'id' && $to == 'name') {
+					/* The following regex pattern is designed to match occurrences of words like xxx{comparator}yyy where yyy is an integer or a pipe-separated list of integers, and yyy is not 0.
+					Here's a breakdown of the pattern:
+					"?([^",]+?)"?: Matches an optional leading double quote, followed by one or more characters that are not double quotes or commas, and an optional trailing double quote. This captures the xxx part.
+					\s*(=|!=)\s*: Matches zero or more whitespace characters, followed by either = or !=, and then zero or more whitespace characters. This captures the comparator.
+					(?!0\b)(\d+(?:\|(?!0\b)\d+)*): Uses a negative lookahead (?!0\b) to ensure that yyy is not 0. Then, it matches one or more digits followed by zero or more occurrences of | and digits, ensuring none of the digits are 0.
+					(?=[,"]): Positive lookahead to ensure that the match is followed by a comma or a double quote.
+					This pattern ensures that yyy is a non-zero integer or a pipe-separated list of non-zero integers. */
+//					$pattern = '/"?([^",]+?)"?\s*(=|!=)\s*(?!0\b)(\d+(?:\|(?!0\b)\d+)*)(?=[,"])/';
+//					$pattern = '/"?([a-zA-Z0-9_]+?)"?\s*(=|!=)\s*(?!0\b)(\d+(?:\|(?!0\b)\d+)*)(?=[,"])/';
+					$pattern = '/"?([^",]+?)"?\s*(=|!=)\s*(?!0\b)(\d+(?:\|(?!0\b)\d+)*)(?=[,"]|$)/';
+				} else {
+					/* The following regex pattern is designed to match occurrences of words like xxx{comparator}yyy where yyy is an alphanumeric string that may include slashes, hyphens, underscores, or be a pipe-separated list of such strings.
+					Here's a breakdown of the pattern:
+					"?([^",]+?)"?: Matches an optional leading double quote, followed by one or more characters that are not double quotes or commas, and an optional trailing double quote. This captures the xxx part.
+					\s*(=|!=)\s*: Matches zero or more whitespace characters, followed by either = or !=, and then zero or more whitespace characters. This captures the comparator.
+					([a-zA-Z0-9\/_-]+(?:\|[a-zA-Z0-9\/_-]+)*): Matches one or more alphanumeric characters, slashes, hyphens, or underscores, followed by zero or more occurrences of | and similar characters. This captures the yyy part.
+					(?=[,"]): Positive lookahead to ensure that the match is followed by a comma or a double quote.
+					This pattern ensures that yyy can be a single alphanumeric string or a pipe-separated list of such strings. */
+					$pattern = '/"?([^",]+?)"?\s*(=|!=)\s*([a-zA-Z0-9\/_-]+(?:\|[a-zA-Z0-9\/_-]+)*)(?=[,"]|$)/';
+				}
+				// Find all matches
+				preg_match_all($pattern, $value, $matches, PREG_SET_ORDER);
+				foreach($matches as $match) {
+					$match1 = trim($match[1]);
+					if($match1 == 'template') {
+						$match3 = explode('|', $match[3]);
+						$templates = [];
+						foreach($match3 as $ref) {
+							$template = $this->templates->get($ref);
+							$templates[] = $template->$to;
+						}
+						$templateRef = implode('|', $templates);
+						$replace = $match[1] . $match[2] . $templateRef;
+					} else if($match1 == 'field') {
+						$match3 = explode('|', $match[3]);
+						$fields = [];
+						foreach($match3 as $ref) {
+							$field = $this->fields->get($ref);
+							$fields[] = $field->$to;
+						}
+						$fieldRef = implode('|', $fields);
+						$replace = $match[1] . $match[2] . $fieldRef;
+					} else {
+						$match3 = explode('|', $match[3]);
+						$pages = [];
+						foreach($match3 as $ref) {
+							$page = $this->pages->get($ref);
+							if($match1 == 'parent' || $match1 == 'has_parent') {
+								$pages[] = $page->$pageTo;
+							} else {
+								// If $match[1] contains a dot, the field is just the part after the (last) dot
+								$parts = explode('.', $match1);
+								$field = $this->fields->get($parts[count($parts) - 1]);
+								if(is_a($field, 'ProcessWire\PageField')) {
+									$pages[] = $page->$pageTo;
+								} else {
+//							if($field && !($field->type == 'FieldtypeInteger')) $this->error("Field $match1 is not a page reference field"); // removed as over-aggressive
+									$pages[] = $ref;
+								}
+							}
+						}
+						$replace = $match[1] . $match[2] . implode('|', $pages);
+					}
+					$pattern = '/' . preg_quote(trim($match[0], '",'), '/') . '(?=\b|,|\s|")/';
+					preg_match($pattern, $value, $matches2, PREG_OFFSET_CAPTURE);
+					$value = preg_replace($pattern, $replace, $value);
+				}
+				$newArray[$key] = $value;
+			}
+		}
+		return $newArray;
+	}
 
 }
