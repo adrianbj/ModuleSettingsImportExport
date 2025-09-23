@@ -27,7 +27,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
     public static function getModuleInfo() {
         return array(
             'title' => 'Module Settings Import Export',
-            'version' => '0.2.9',
+            'version' => '0.2.10',
             'summary' => 'Adds import and export of settings to each module config page.',
             'author' => 'Adrian Jones',
             'autoload' => function() {
@@ -120,6 +120,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
         }
         $this->wire('modules')->saveModuleConfigData($this->moduleName, $moduleSettings[$this->moduleName]['settings']);
         $this->wire()->message('The pasted settings for the ' . $this->moduleName . ' module were successfully imported.');
+        $this->wire('session')->redirect($this->wire('input')->url(true));
     }
 
     protected function restoreSettings() {
@@ -236,6 +237,7 @@ class ModuleSettingsImportExport extends WireData implements Module, Configurabl
                 else {
                     $this->wire('modules')->saveModuleConfigData($moduleName, $module['settings']);
                     $this->wire()->message('The pasted settings for the ' . $moduleName . ' module were successfully imported.');
+                    $this->wire('session')->redirect($this->wire('input')->url(true));
                 }
             }
         }
